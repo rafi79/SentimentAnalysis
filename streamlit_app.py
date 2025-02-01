@@ -1,5 +1,5 @@
 """
-Complete Streamlit Sentiment Analysis App with Training and Prediction
+Complete Streamlit Sentiment Analysis App with Fixed NLTK Downloads
 """
 import streamlit as st
 import pandas as pd
@@ -12,47 +12,69 @@ import nltk
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 import re
-import pickle
 
-# Download NLTK data
+# Download all required NLTK data at startup
 @st.cache_resource
 def download_nltk_data():
-    nltk.download('punkt')
-    nltk.download('stopwords')
+    try:
+        nltk.download('punkt')
+        nltk.download('stopwords')
+        nltk.download('averaged_perceptron_tagger')
+        nltk.download('wordnet')
+        nltk.download('omw-1.4')
+        return True
+    except Exception as e:
+        st.error(f"Error downloading NLTK data: {str(e)}")
+        return False
 
-download_nltk_data()
+# Initialize NLTK downloads
+if not download_nltk_data():
+    st.error("Failed to download required NLTK data. Please try again.")
+    st.stop()
 
 class TextPreprocessor:
     def __init__(self):
-        self.stop_words = set(stopwords.words('english'))
+        try:
+            self.stop_words = set(stopwords.words('english'))
+        except Exception as e:
+            st.error(f"Error initializing stop words: {str(e)}")
+            self.stop_words = set()
     
     def clean_text(self, text):
         """Clean and preprocess text data"""
         if not isinstance(text, str):
             return ""
         
-        # Convert to lowercase
-        text = text.lower()
-        
-        # Remove URLs
-        text = re.sub(r'http\S+|www\S+|https\S+', '', text)
-        
-        # Remove user mentions
-        text = re.sub(r'@\w+', '', text)
-        
-        # Remove hashtag symbols but keep text
-        text = re.sub(r'#', '', text)
-        
-        # Remove special characters and numbers
-        text = re.sub(r'[^a-zA-Z\s]', '', text)
-        
-        # Tokenize
-        tokens = word_tokenize(text)
-        
-        # Remove stop words
-        tokens = [t for t in tokens if t not in self.stop_words]
-        
-        return ' '.join(tokens)
+        try:
+            # Convert to lowercase
+            text = text.lower()
+            
+            # Remove URLs
+            text = re.sub(r'http\S+|www\S+|https\S+', '', text)
+            
+            # Remove user mentions
+            text = re.sub(r'@\w+', '', text)
+            
+            # Remove hashtag symbols but keep text
+            text = re.sub(r'#', '', text)
+            
+            # Remove special characters and numbers
+            text = re.sub(r'[^a-zA-Z\s]', '', text)
+            
+            # Tokenize
+            try:
+                tokens = word_tokenize(text)
+            except Exception as e:
+                st.warning(f"Tokenization failed, using basic split: {str(e)}")
+                tokens = text.split()
+            
+            # Remove stop words
+            tokens = [t for t in tokens if t not in self.stop_words]
+            
+            return ' '.join(tokens)
+        except Exception as e:
+            st.error(f"Error in text cleaning: {str(e)}")
+            return text
 
 class SentimentAnalyzer:
     def __init__(self):
@@ -62,17 +84,30 @@ class SentimentAnalyzer:
     
     def prepare_data(self, df):
         """Prepare data for training"""
-        # Clean data
+        # Create a copy
         df = df.copy()
-        df = df.dropna(subset=['Tweets', 'Sentiment'])
         
-        df['cleaned_tweets'] = df['Tweets'].apply(self.preprocessor.clean_text)
-        df = df[df['cleaned_tweets'].str.len() > 0]
+        # Display initial data info
+        st.write("Initial data shape:", df.shape)
+        
+        # Check and clean data
+        df = df.dropna(subset=['Tweets', 'Sentiment'])
+        st.write("Shape after removing missing values:", df.shape)
+        
+        # Clean texts
+        with st.spinner("Cleaning texts..."):
+            df['cleaned_tweets'] = df['Tweets'].apply(self.preprocessor.clean_text)
+            df = df[df['cleaned_tweets'].str.len() > 0]
+        st.write("Shape after text cleaning:", df.shape)
         
         # Convert sentiment to numeric
         sentiment_map = {'negative': 0, 'neutral': 1, 'positive': 2}
         df['sentiment_numeric'] = df['Sentiment'].map(sentiment_map)
         df = df.dropna(subset=['sentiment_numeric'])
+        
+        # Display sentiment distribution
+        st.write("\nSentiment distribution:")
+        st.write(df['sentiment_numeric'].value_counts())
         
         return train_test_split(
             df['cleaned_tweets'].values,
@@ -84,42 +119,54 @@ class SentimentAnalyzer:
     
     def train(self, X_train, y_train):
         """Train the model"""
-        X_train_vectorized = self.vectorizer.fit_transform(X_train)
-        self.model.fit(X_train_vectorized, y_train)
+        try:
+            X_train_vectorized = self.vectorizer.fit_transform(X_train)
+            self.model.fit(X_train_vectorized, y_train)
+        except Exception as e:
+            st.error(f"Error during training: {str(e)}")
+            raise e
     
     def evaluate(self, X_test, y_test):
         """Evaluate model performance"""
-        X_test_vectorized = self.vectorizer.transform(X_test)
-        y_pred = self.model.predict(X_test_vectorized)
-        return classification_report(y_test, y_pred,
-                                  target_names=['Negative', 'Neutral', 'Positive'])
+        try:
+            X_test_vectorized = self.vectorizer.transform(X_test)
+            y_pred = self.model.predict(X_test_vectorized)
+            return classification_report(y_test, y_pred,
+                                      target_names=['Negative', 'Neutral', 'Positive'])
+        except Exception as e:
+            st.error(f"Error during evaluation: {str(e)}")
+            raise e
     
     def predict(self, text):
         """Predict sentiment for a single text"""
-        cleaned_text = self.preprocessor.clean_text(text)
-        
-        if not cleaned_text:
+        try:
+            cleaned_text = self.preprocessor.clean_text(text)
+            
+            if not cleaned_text:
+                return {
+                    'sentiment': 'neutral',
+                    'confidence': 0.0,
+                    'cleaned_text': cleaned_text
+                }
+            
+            X = self.vectorizer.transform([cleaned_text])
+            prediction = self.model.predict(X)[0]
+            probabilities = self.model.predict_proba(X)[0]
+            
+            sentiment_map = {0: 'negative', 1: 'neutral', 2: 'positive'}
             return {
-                'sentiment': 'neutral',
-                'confidence': 0.0,
+                'sentiment': sentiment_map[prediction],
+                'confidence': float(max(probabilities)),
                 'cleaned_text': cleaned_text
             }
-        
-        X = self.vectorizer.transform([cleaned_text])
-        prediction = self.model.predict(X)[0]
-        probabilities = self.model.predict_proba(X)[0]
-        
-        sentiment_map = {0: 'negative', 1: 'neutral', 2: 'positive'}
-        return {
-            'sentiment': sentiment_map[prediction],
-            'confidence': float(max(probabilities)),
-            'cleaned_text': cleaned_text
-        }
+        except Exception as e:
+            st.error(f"Error during prediction: {str(e)}")
+            raise e
 
 def main():
     st.title("AI Tweet Sentiment Analysis")
     
-    # Initialize session state for model
+    # Initialize session state
     if 'analyzer' not in st.session_state:
         st.session_state.analyzer = None
         st.session_state.model_trained = False
