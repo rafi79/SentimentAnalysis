@@ -1,5 +1,5 @@
 """
-Streamlit Sentiment Analysis App with Simplified Tokenization
+Ai Related Tweets sentiment trained model calssificaion
 """
 import streamlit as st
 import pandas as pd
