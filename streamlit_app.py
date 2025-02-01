@@ -1,5 +1,5 @@
 """
-Complete Streamlit Sentiment Analysis App with Fixed NLTK Downloads
+Streamlit Sentiment Analysis App with Simplified Tokenization
 """
 import streamlit as st
 import pandas as pd
@@ -10,18 +10,13 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import classification_report
 import nltk
 from nltk.corpus import stopwords
-from nltk.tokenize import word_tokenize
 import re
 
-# Download all required NLTK data at startup
+# Download only stopwords
 @st.cache_resource
 def download_nltk_data():
     try:
-        nltk.download('punkt')
         nltk.download('stopwords')
-        nltk.download('averaged_perceptron_tagger')
-        nltk.download('wordnet')
-        nltk.download('omw-1.4')
         return True
     except Exception as e:
         st.error(f"Error downloading NLTK data: {str(e)}")
@@ -61,15 +56,11 @@ class TextPreprocessor:
             # Remove special characters and numbers
             text = re.sub(r'[^a-zA-Z\s]', '', text)
             
-            # Tokenize
-            try:
-                tokens = word_tokenize(text)
-            except Exception as e:
-                st.warning(f"Tokenization failed, using basic split: {str(e)}")
-                tokens = text.split()
+            # Simple tokenization by splitting on whitespace
+            tokens = text.split()
             
-            # Remove stop words
-            tokens = [t for t in tokens if t not in self.stop_words]
+            # Remove stop words and short words
+            tokens = [t for t in tokens if t not in self.stop_words and len(t) > 2]
             
             return ' '.join(tokens)
         except Exception as e:
@@ -107,7 +98,7 @@ class SentimentAnalyzer:
         
         # Display sentiment distribution
         st.write("\nSentiment distribution:")
-        st.write(df['sentiment_numeric'].value_counts())
+        st.write(pd.value_counts(df['sentiment_numeric']))
         
         return train_test_split(
             df['cleaned_tweets'].values,
